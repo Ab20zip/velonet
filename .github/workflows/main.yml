@@ -1,0 +1,64 @@
+name: Build
+
+on:
+    push:
+        branches:
+            - 'main'
+            - 'renovate/*'
+        tags:
+            - 'v*' # For v1.0, v0.1.0, etc
+    pull_request:
+        branches:
+            - 'main'
+    schedule:
+        -   cron: '0 0 * * *'
+    workflow_dispatch:
+
+concurrency:
+    group: ${{ format('{0}-{1}', github.job, github.ref) }}
+    cancel-in-progress: true
+
+jobs:
+    build:
+        runs-on: ${{ matrix.os }}
+        strategy:
+            matrix:
+                os: [ ubuntu-latest, windows-latest, macos-latest ]
+                java: [ 22 ]
+        steps:
+            -   name: Checkout code
+                uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
+
+            -   name: Cache Gradle Dependencies
+                uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4
+                with:
+                    path: |
+                        ~/.gradle/caches
+                        ~/.gradle/wrapper
+                    key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+                    restore-keys: |
+                        ${{ runner.os }}-gradle-
+
+            -   name: Common Setup
+                uses: ./.github/actions/common-setup
+                with:
+                    java-version: ${{ matrix.java }}
+
+            -   name: Retrieve Project Name
+                run: echo "PROJECT_NAME=$(${{github.workspace}}/gradlew -q printProjectName)" >> $GITHUB_OUTPUT
+                id: project_name
+
+            -   name: Get Project Name
+                run: echo "PROJECT_NAME=${{steps.project_name.outputs.PROJECT_NAME}}" >> $GITHUB_ENV
+
+            -   name: Build with Gradle
+                run: ./gradlew build --info
+
+            -   name: Upload Build Results
+                uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4
+                with:
+                    name: Build Results (Java ${{ matrix.java }} on ${{ matrix.os }})
+                    path: ${{ github.workspace }}/build/libs
+
+        outputs:
+            project_name: ${{ steps.project_name.outputs.PROJECT_NAME }}
